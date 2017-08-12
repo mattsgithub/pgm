@@ -1,0 +1,4 @@
+numpy==1.13.1
+-e git+https://github.com/mattsgithub/pgm.git@082038e7d69a777b1b86733b1068fe3a72345442#egg=pgm
+py==1.4.34
+pytest==3.2.1

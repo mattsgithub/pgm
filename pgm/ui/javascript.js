@@ -29,14 +29,19 @@ function dragended() {
         if (intersection(nodes[i].x, nodes[i].y, x, y, 45.0)) {
             var x1 = drag_line.attr("x1");
             var y1 = drag_line.attr("y1");
+
+            var d = Math.sqrt((nodes[i].x - x1)**2 + (nodes[i].y - y1)**2);
+            var rx = nodes[i].x - x1;
+            var ry = nodes[i].y - y1;
+
             svg.append("line")
                     .attr("stroke", "black")
                     .attr("marker-end", "url(#arrow)")
                     .attr("stroke-width", 5)
                     .attr("x1", x1)
                     .attr("y1", y1)
-                    .attr("x2", d3.event.x)
-                    .attr("y2", d3.event.y);
+                    .attr("x2", nodes[i].x - 95.0 * (rx/d))
+                    .attr("y2", nodes[i].y - 95.0 * (ry/d));
         }
     }
 };
@@ -79,6 +84,7 @@ window.onload = function() {
             .data(nodes)
             .enter()
             .append("circle")
+            .style("opacity", 0.5)
             .attr("cx", function(d) {return d.x})
             .attr("cy", function(d) {return d.y})
             .attr("r", function(d) {return d.r})

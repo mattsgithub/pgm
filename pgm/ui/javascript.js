@@ -8,6 +8,7 @@ function dragmove() {
 };
 
 function dragstarted() {
+    console.log("drag started");
     drag_line.style("opacity", 1.0)
     drag_line.attr("x1", d3.event.x);
     drag_line.attr("y1", d3.event.y);
@@ -20,7 +21,17 @@ function intersection(x0, y0, x, y, r) {
     return d <= r**2
 };
 
+function is_intersection(x, y, nodes) {
+    for (var i = 0; i < nodes.length; i++) {
+        if (intersection(nodes[i].x, nodes[i].y, x, y, 2*nodes[i].r)) {
+            return true;
+        }
+    }
+    return false;
+};
+
 function dragended() {
+    console.log("dragended");
     drag_line.style("opacity", 0.0)
     var x = d3.event.x;
     var y = d3.event.y;
@@ -29,6 +40,11 @@ function dragended() {
         if (intersection(nodes[i].x, nodes[i].y, x, y, 45.0)) {
             var x1 = drag_line.attr("x1");
             var y1 = drag_line.attr("y1");
+
+            if (intersection(x1, y1, x, y, 45.0)) {
+                console.log("drag ended on itself!");
+                return;
+            };
 
             var d = Math.sqrt((nodes[i].x - x1)**2 + (nodes[i].y - y1)**2);
             var rx = nodes[i].x - x1;
@@ -74,11 +90,26 @@ window.onload = function() {
     drag.on("drag", dragmove);
     drag.on("end", dragended);
 
+
+    svg.on("contextmenu", function() {
+        d3.event.preventDefault();
+        console.log("test?");
+    });
     svg.on("click", function() {
         var coords = d3.mouse(this);
+        var x = coords[0];
+        var y = coords[1];
+
+        // Before node is added
+        // does this overlap with a current node?
+        if (is_intersection(x, y, nodes)) {
+            console.log("collision");
+            return;
+        };
+
         nodes.push({'r': 50.0,
-                    'x': coords[0],
-                    'y': coords[1]});
+                    'x': x,
+                    'y': y});
 
         svg.selectAll("circle")
             .data(nodes)
@@ -90,5 +121,13 @@ window.onload = function() {
             .attr("r", function(d) {return d.r})
             .style("fill", "#c4c4c4")
             .call(drag);
+
+        svg.selectAll("text")
+            .data(nodes)
+            .enter()
+            .append("text")
+            .attr("x", function(d) {return d.x})
+            .attr("y", function(d) {return d.y + 50.0})
+            .text("node_" + nodes.length);
     });
 };

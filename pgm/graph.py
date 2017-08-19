@@ -1,9 +1,45 @@
 from collections import defaultdict
+import numpy as np
+
+from pgm.factor import Factor
 
 
 class DirectedGraph(object):
     def __init__(self):
         self._nodes = defaultdict(dict)
+        self._index = 0
+        self._to_index = dict()
+
+    def load_graph_from_json(self, json_):
+        for node_name, value in json_.iteritems():
+
+            # Have we seen this node name before?
+            if node_name not in self._to_index:
+                self._to_index[node_name] = self._index
+                self._index += 1
+
+            for p in value['parents']:
+                if p not in self._to_index:
+                    self._to_index[p] = self._index
+                    self._index += 1
+
+            p_indx = [self._to_index[p] for p in value['parents']]
+            c_indx = self._to_index[node_name]
+
+            scope = np.array([c_indx] + p_indx)
+            card = np.ones(scope.shape[0], dtype=np.int32) * 2
+            val = np.array([v['value'] for v in value['values']])
+
+            # What are the parents?
+            f = Factor(scope=scope,
+                       card=card,
+                       val=val)
+
+            self.add_node(node_name, {'factor': f})
+            self.add_parents(node_name, value['parents'])
+
+    def __len__(self):
+        return len(self._nodes)
 
     def add_parents(self,
                     node_name,

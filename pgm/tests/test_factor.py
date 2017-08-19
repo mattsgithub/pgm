@@ -4,6 +4,8 @@ import numpy as np
 
 from pgm.factor import Factor
 from pgm.factor import get_marg
+from pgm.factor import get_mappings
+from pgm.factor import is_equal
 from pgm.factor import get_stride
 from pgm.factor import get_product_from_list
 from pgm.factor import get_product
@@ -12,10 +14,14 @@ from pgm.factor import indx_to_assign
 
 '''
 python -m pytest -vv -s test_factor.py | less
-
-How should I respect order of scope when
-multiplying two factors?
 '''
+
+
+def test_get_mappings_same_array_but_out_of_order():
+    x = np.array([6, 4, 3])
+    y = np.array([4, 3, 6])
+    mapX, mapY = get_mappings(x, y)
+    assert np.array_equal(x[mapX], y[mapY])
 
 
 @pytest.fixture(scope='module')
@@ -320,3 +326,37 @@ def test_f2_marg(f2):
     assert np.allclose(f.card, np.array([2]))
     assert np.allclose(f.val, np.array([0.59 + 0.22,
                                         0.41 + 0.78]))
+
+
+def test_is_equal_f1_f1(f1):
+    assert is_equal(f1, f1)
+
+
+def test_is_equal_f2_f2(f2):
+    assert is_equal(f2, f2)
+
+
+def test_is_equal_scope_out_of_order(f2):
+    '''
+        f2
+    [2  1  phi]
+    ------------
+    [0  0  0.59]
+    [1  0  0.41]
+    [0  1  0.22]
+    [1  1  0.78]
+
+       f2_
+    [1  2  phi]
+    ------------
+    [0  0  0.59]
+    [1  0  0.22]
+    [0  1  0.41]
+    [1  1  0.78]
+    '''
+    f2_ = Factor(scope=np.array([1, 2]),
+                 card=np.array([2, 2]),
+                 val=np.array([0.59, 0.22, 0.41, 0.78]))
+
+    assert is_equal(f2, f2_)
+    assert is_equal(f2_, f2)

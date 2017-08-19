@@ -5,6 +5,56 @@ import numpy as np
 Factor = namedtuple('Factor', 'scope card val')
 
 
+def get_matching_indices(f1,
+                         f2,
+                         map1,
+                         map2):
+    u = np.union1d(f1.scope, f2.scope)
+    card = np.empty((u.shape[0],), dtype=int)
+    N = np.prod(card)
+    assign = indx_to_assign(np.arange(N), card)
+    I1 = assign_to_indx(assign[:, map1], f1.card)
+    I2 = assign_to_indx(assign[:, map2], f2.card)
+    return I1, I2
+
+
+def get_mappings(x, y):
+
+    # Find union of both arrays
+    u = np.union1d(x, y)
+
+    # Get indices of elements
+    # for union array (in sorted order)
+    sorted_indx = u.argsort()
+
+    u_sorted = u[sorted_indx]
+    mapX = sorted_indx[np.searchsorted(u_sorted, x)]
+    mapY = sorted_indx[np.searchsorted(u_sorted, y)]
+    return mapX, mapY
+
+
+def is_equal(f1, f2):
+
+    if np.setdiff1d(f1.scope, f2.scope).shape[0] > 0:
+        return False
+
+    map1, map2 = get_mappings(f1.scope,
+                              f2.scope)
+    # Are cards equal?
+    if not np.array_equal(f1.card[map1], f2.card[map2]):
+        return False
+
+    I1, I2 = get_matching_indices(f1,
+                                  f2,
+                                  map1,
+                                  map2)
+    # Are values equal?
+    if not np.allclose(f1.val[I1], f2.val[I2]):
+        return False
+
+    return True
+
+
 def assign_to_indx(A, C):
     """Given assignment(s) and
        card of factor, returns
@@ -126,16 +176,8 @@ def get_product_from_list(fs):
 def get_product(A, B):
     scope = np.union1d(A.scope, B.scope)
 
-    # https://stackoverflow.com/questions/30684563/numpy-search-array-for-multiple-values-and-returns-their-indices
-    # Index values that
-    # respect ascending order
-    # of elements
-    indx = scope.argsort()
-
-    # Sorted scope
-    sorted_scope = scope[indx]
-    mapA = indx[np.searchsorted(sorted_scope, A.scope)]
-    mapB = indx[np.searchsorted(sorted_scope, B.scope)]
+    mapA, mapB = get_mappings(A.scope,
+                              B.scope)
 
     card = np.empty((scope.shape[0],), dtype=int)
 

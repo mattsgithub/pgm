@@ -1,6 +1,3 @@
-import copy
-
-
 def get_min_fill_cost(R, n):
     """If n were eliminated,
     how many fill-ins would this introduce?
@@ -8,7 +5,7 @@ def get_min_fill_cost(R, n):
     cost = 0
 
     # List of neighbors
-    N = list(R[n])
+    N = R.neighbors(n)
     for i in xrange(len(N)):
         for j in xrange(i + 1, len(N)):
             if N[j] not in R[N[i]]:
@@ -16,14 +13,14 @@ def get_min_fill_cost(R, n):
     return cost
 
 
-def get_elim_order_using_greedy_search(G):
+def get_elim_order(G):
     """Greedy search algorithm
     Uses min fill as cost function
     Modifies G
     See triangulation-report
     """
-    I = copy.deepcopy(G)
-    R = copy.deepcopy(G)
+    I = G.copy()
+    R = G.copy()
     elim_order = []
 
     while len(R) > 0:
@@ -45,9 +42,9 @@ def get_elim_order_using_greedy_search(G):
                     R[n1].add(n2)
 
         # Remove opt_node from induced graph
-        del R[opt_node]
+        R.remove_node(opt_node)
         for n in R:
             if opt_node in R[n]:
-                R[n].remove(opt_node)
+                R.remove_node(opt_node)
 
     return I, elim_order

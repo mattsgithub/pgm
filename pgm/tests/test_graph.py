@@ -1,7 +1,7 @@
 import pytest
 import json
 
-from pgm.graph import DirectedGraph
+from pgm.graph import BayesianNetwork
 from pgm.factor import Factor
 from pgm.factor import is_equal
 import numpy as np
@@ -9,20 +9,20 @@ import numpy as np
 
 @pytest.fixture(scope='module')
 def dgraph_gold():
-    graph = {1: {'parents': set(), 'kv': {'key_1': 'value_1'}},
-             2: {'parents': set(), 'kv': {'key_2': 'value_2'}},
-             3: {'parents': {1, 2}, 'kv': {'key_3': 'value_3'}}}
+    graph = {1: {'parents': [], 'kv': {'key_1': 'value_1'}},
+             2: {'parents': [], 'kv': {'key_2': 'value_2'}},
+             3: {'parents': [1, 2], 'kv': {'key_3': 'value_3'}}}
     return graph
 
 
 @pytest.fixture(scope='module')
 def dgraph_test(dgraph_gold):
     # Create graph
-    dg = DirectedGraph()
+    dg = BayesianNetwork()
     for n, v in dgraph_gold.iteritems():
         dg.add_node(node_name=n,
-                    dict_=v['kv'])
-        dg.add_parents(node_name=n,
+                    attr_dict=v['kv'])
+        dg.add_parents(child=n,
                        parent_names=v['parents'])
     return dg
 
@@ -41,12 +41,11 @@ def test_dict_(dgraph_test, dgraph_gold):
 
 
 def test_load_from_json():
-    dg = DirectedGraph()
+    dg = BayesianNetwork()
     with open('one_parent_net.json', 'r') as f:
         json_ = json.load(f)
         dg.load_graph_from_json(json_)
 
-    # Check both nodes are present
     assert len(dg) == 2
 
     parents = dg.get_parents('parent')
@@ -66,3 +65,18 @@ def test_load_from_json():
                card=np.array([2, 2]),
                val=np.array([0.13, 0.6, 0.4, 0.87]))
     assert is_equal(f, factor)
+
+
+def test_infer():
+    dg = BayesianNetwork()
+    with open('one_parent_net.json', 'r') as f:
+        json_ = json.load(f)
+        dg.load_graph_from_json(json_)
+
+    dg.infer()
+
+    rv = dg.get_value('parent', 'rv')
+    assert np.array_equal(np.array([0.57, 0.43]), rv)
+
+    rv = dg.get_value('child', 'rv')
+    assert np.array_equal(np.array([0.284, 0.716]), rv)

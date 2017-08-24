@@ -2,8 +2,10 @@ import pytest
 import json
 
 from pgm.graph import BayesianNetwork
+from pgm.graph import get_moral_graph
 from pgm.factor import Factor
 from pgm.factor import is_equal
+import networkx as nx
 import numpy as np
 
 
@@ -63,7 +65,7 @@ def test_load_from_json():
     factor = dg.get_value('child', 'factor')
     f = Factor(scope=np.array([1, 0]),
                card=np.array([2, 2]),
-               val=np.array([0.13, 0.6, 0.4, 0.87]))
+               val=np.array([0.40, 0.13, 0.6, 0.87]))
     assert is_equal(f, factor)
 
 
@@ -80,3 +82,22 @@ def test_infer():
 
     rv = dg.get_value('child', 'rv')
     assert np.array_equal(np.array([0.284, 0.716]), rv)
+
+
+def test_get_moral_graph():
+    dg = nx.DiGraph()
+    edges = [(1, 4), (2, 4),
+             (3, 4), (4, 7),
+             (5, 7), (6, 7),
+             (7, 8)]
+    dg.add_edges_from(edges)
+
+    ug = get_moral_graph(dg)
+    assert ug.neighbors(1) == [2, 3, 4]
+    assert ug.neighbors(2) == [1, 3, 4]
+    assert ug.neighbors(3) == [1, 2, 4]
+    assert ug.neighbors(4) == [1, 2, 3, 5, 6, 7]
+    assert ug.neighbors(5) == [4, 6, 7]
+    assert ug.neighbors(6) == [4, 5, 7]
+    assert ug.neighbors(7) == [8, 4, 5, 6]
+    assert ug.neighbors(8) == [7]

@@ -1,21 +1,64 @@
 from collections import defaultdict
 import numpy as np
-
-from pgm.factor import Factor
-from pgm.elim import get_elim_order
+from itertools import combinations
 import networkx as nx
 
+from pgm.factor import Factor
+from pgm.factor import get_marg
+from pgm.factor import get_product_from_list
+from pgm.factor import assign_to_indx
+from pgm.elim import get_elim_order
 
-def get_clique_graph(I, elim_order):
-    """Construct clique graph
-       from induced graph and given
-       elim order. If elim order is
-       followed, the neighbors of
-       each node (including itself)
-       is guaranteed to form a clique
-    """
-    C = nx.Graph()
-    return C
+
+def run_message_passing(cg):
+    if len(cg) == 1:
+        return
+
+
+def get_clique_graph(ug):
+    # Return induced graph
+    I, elim_order = get_elim_order(ug)
+    index = 0
+    clique_graph = nx.Graph()
+
+    for node in elim_order:
+        # Names of variables in clique
+        node_names = set(I.neighbors(node))
+        node_names.add(node)
+
+        is_subset = False
+        clique_neighbors = set()
+        for clique_node, data in clique_graph.nodes_iter(data=True):
+            if node_names.issubset(data['node_names']):
+                is_subset = True
+                break
+
+            if len(node_names.intersection(data['node_names'])) > 0:
+                clique_neighbors.add(clique_node)
+
+        if not is_subset:
+            clique_name = 'C{0}'.format(index)
+            factor = get_product_from_list([ug.node[n]['factor'] for n in node_names])
+            clique_graph.add_node(clique_name, {'node_names': node_names,
+                                                'factor': factor})
+            index += 1
+
+            # Add neighbors
+            for c in clique_neighbors:
+                clique_graph.add_edge(clique_name, c)
+
+        # Remove node from consideration
+        I.remove_node(node)
+    return clique_graph
+
+
+def get_moral_graph(dg):
+    ug = dg.to_undirected()
+    for node in dg.nodes_iter(data=False):
+        parents = dg.predecessors(node)
+        for r in combinations(parents, 2):
+            ug.add_edge(r[0], r[1])
+    return ug
 
 
 class BayesianNetwork(object):
@@ -44,7 +87,14 @@ class BayesianNetwork(object):
 
             scope = np.array([c_indx] + p_indx)
             card = np.ones(scope.shape[0], dtype=np.int32) * 2
-            val = np.array([v['value'] for v in value['values']])
+
+            N = np.prod(card)
+            val = np.empty((N,))
+            for v in value['values']:
+                A = np.array(v['states'])
+                A = A.reshape((-1, A.shape[0]))
+                i = assign_to_indx(A, card)[0]
+                val[i] = v['value']
 
             # What are the parents?
             f = Factor(scope=scope,
@@ -71,18 +121,32 @@ class BayesianNetwork(object):
             yield node_name
 
     def infer(self):
-        ug = self._dg.to_undirected()
-        I, elim_order = get_elim_order(ug)
-        # Form a clique graph now that
-        # induced graph and elim order
-        # is known. This clique graph
-        # will be a tree. Thus, belief
-        # propagation can be computed on
-        # it
-        c = get_clique_graph(I, elim_order)
+        # Convert to moral graph
+        ug = get_moral_graph(self._dg)
 
-        self.set_value('parent', 'rv', np.array([0.57, 0.43]))
-        self.set_value('child', 'rv', np.array([0.284, 0.716]))
+        # Convert to clique graph
+        cg = get_clique_graph(ug)
+
+        # cg = get_minimum_spanning_tree(cg)
+
+        run_message_passing(cg)
+
+        for clique_node, data in cg.nodes_iter(data=True):
+            node_names = list(data['node_names'])
+
+            for i in xrange(len(node_names)):
+                factor = data['factor']
+                # Unmarginalized factor
+                for j in xrange(len(node_names)):
+                    if i == j:
+                        continue
+                    import pdb; pdb.set_trace()
+                    factor = get_marg(factor, self._to_index[node_names[j]])
+                self.set_value(node_names[i], 'rv', factor)
+        import pdb; pdb.set_trace()
+
+        # self.set_value('parent', 'rv', np.array([0.57, 0.43]))
+        # self.set_value('child', 'rv', np.array([0.284, 0.716]))
 
     def get_value(self,
                   node_name,

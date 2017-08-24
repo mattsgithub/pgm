@@ -15,9 +15,11 @@ def get_min_fill_cost(R, n):
 
 def get_elim_order(G):
     """Greedy search algorithm
+    Given an undirected graph, find
+    a elim order and return
+    clique graph
+
     Uses min fill as cost function
-    Modifies G
-    See triangulation-report
     """
     I = G.copy()
     R = G.copy()

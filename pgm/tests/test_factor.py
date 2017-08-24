@@ -327,6 +327,28 @@ def test_f2_marg(f2):
     assert np.allclose(f.val, np.array([0.59 + 0.22,
                                         0.41 + 0.78]))
 
+def test_another_marg():
+    f1 = Factor(scope=np.array([0]),
+                card=np.array([2], dtype=np.int32),
+                val=np.array([ 0.57,  0.43]))
+
+    f2 = Factor(scope=np.array([1, 0]),
+                card=np.array([2, 2], dtype=np.int32),
+                val=np.array([ 0.4 ,  0.13,  0.6 ,  0.87]))
+
+    f = get_product(f1, f2)
+
+    f_marg = get_marg(f, 1)
+
+    assert np.allclose(f_marg.scope, np.array([0]))
+    assert np.allclose(f_marg.card, np.array([2]))
+    """
+    assert np.allclose(f_marg.val, np.array([0.57 * 0.40 + 0.57 * 0.60,
+                                             0.44 * 0.13 + 0.43 * 0.87]))
+    """
+    assert np.allclose(f_marg.val, np.array([0.57,
+                                             0.43]))
+
 
 def test_is_equal_f1_f1(f1):
     assert is_equal(f1, f1)

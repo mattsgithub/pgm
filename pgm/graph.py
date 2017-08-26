@@ -10,10 +10,53 @@ from pgm.factor import get_marg
 from pgm.factor import assign_to_indx
 
 
-def message_pass(cg):
+def message_pass(cg, to_name):
     # Pick first node as root
     # Perform depth first search
-    pass
+    root_node = cg.nodes()[0]
+    descend(root_node, None, cg, to_name)
+
+
+def ascend(node, parent_node, cg, to_name):
+    # Pass message from child to parent
+    # Collect all messages
+    factors = [cg.node[node]['factor']]
+    if len(cg.node[node]['msg']) > 0:
+        factors.extend(cg.node[node]['msg'])
+    msg = get_product_from_list(factors)
+
+    # Now, marginalize out everything except sepset
+    sepset = cg.get_edge_data(node, parent_node)['sepset']
+    scope = msg.scope
+    for i in scope:
+        name = to_name[i]
+        if name not in sepset:
+            msg = get_marg(msg, i)
+
+    cg.node[parent_node]['msg'].append(msg)
+
+    # Is mailbox full?
+    if len(cg.node[parent_node]['msg']) == len(cg.node[parent_node]['children']):
+        # Don't continue if parent is None;
+        # Reached end
+        if cg.node[parent_node]['parent'] is not None:
+            ascend(cg.node[parent_node], cg.node[parent_node]['parent'], cg, to_name)
+
+
+def descend(node, parent_node, cg, to_name):
+    children = set(cg.neighbors(node))
+    if parent_node is not None:
+        children.remove(parent_node)
+
+    # Reached a leaf node
+    if len(children) == 0:
+        ascend(node, parent_node, cg, to_name)
+    else:
+        if parent_node is not None:
+            cg.node[parent_node]['children'] = children
+        for c in children:
+            cg.node[c]['parent'] = node
+            descend(c, node, cg, to_name)
 
 
 def get_clique_graph(elim_order,
@@ -42,7 +85,10 @@ def get_clique_graph(elim_order,
 
         if len(factors) > 0:
             attr_dict = {'scope': clique_scope,
-                         'factor': get_product_from_list(factors)}
+                         'factor': get_product_from_list(factors),
+                         'msg': [],
+                         'children': [],
+                         'parent': None}
             clique_name = 'C' + str(len(clique_graph) + 1)
             clique_graph.add_node(n=clique_name,
                                   attr_dict=attr_dict)
@@ -135,6 +181,7 @@ class BayesianNetwork(object):
         self._index = 0
         self._dg = nx.DiGraph()
         self._to_index = dict()
+        self._to_name = dict()
 
     def load_graph_from_json(self, json_):
         self._dg = nx.DiGraph()
@@ -143,11 +190,13 @@ class BayesianNetwork(object):
             # Have we seen this node name before?
             if node_name not in self._to_index:
                 self._to_index[node_name] = self._index
+                self._to_name[self._index] = node_name
                 self._index += 1
 
             for p in value['parents']:
                 if p not in self._to_index:
                     self._to_index[p] = self._index
+                    self._to_name[self._index] = p
                     self._index += 1
 
             p_indx = [self._to_index[p] for p in value['parents']]
@@ -196,7 +245,9 @@ class BayesianNetwork(object):
         ug = get_moral_graph(self._dg)
         elim_order, induced_graph = get_elim_order(ug)
         cg = get_clique_graph(elim_order, induced_graph)
-        cg = message_pass(cg)
+
+        if len(cg) > 1:
+            message_pass(cg, self._to_name)
 
         # Update random variables for all nodes in network
         for clique_node, data in cg.nodes_iter(data=True):

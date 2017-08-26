@@ -2,54 +2,122 @@ from collections import defaultdict
 import numpy as np
 from itertools import combinations
 import networkx as nx
+from scipy.misc import comb
 
 from pgm.factor import Factor
-from pgm.factor import get_marg
 from pgm.factor import get_product_from_list
+from pgm.factor import get_marg
 from pgm.factor import assign_to_indx
-from pgm.elim import get_elim_order
 
 
-def run_message_passing(cg):
-    if len(cg) == 1:
-        return
+def message_pass(cg):
+    # Pick first node as root
+    # Perform depth first search
+    pass
 
 
-def get_clique_graph(ug):
-    # Return induced graph
-    I, elim_order = get_elim_order(ug)
-    index = 0
+def get_clique_graph(elim_order,
+                     induced_graph):
+
     clique_graph = nx.Graph()
+    node_names_with_used_factors = set()
 
-    for node in elim_order:
-        # Names of variables in clique
-        node_names = set(I.neighbors(node))
-        node_names.add(node)
+    for node_name in elim_order:
 
-        is_subset = False
-        clique_neighbors = set()
-        for clique_node, data in clique_graph.nodes_iter(data=True):
-            if node_names.issubset(data['node_names']):
-                is_subset = True
-                break
+        # Establish scope for this clique
+        clique_scope = set(induced_graph.neighbors(node_name))
+        clique_scope.add(node_name)
 
-            if len(node_names.intersection(data['node_names'])) > 0:
-                clique_neighbors.add(clique_node)
+        factors = []
+        for clique_node_name in clique_scope:
+            # Has this factor already been used?
+            if clique_node_name in node_names_with_used_factors:
+                continue
 
-        if not is_subset:
-            clique_name = 'C{0}'.format(index)
-            factor = get_product_from_list([ug.node[n]['factor'] for n in node_names])
-            clique_graph.add_node(clique_name, {'node_names': node_names,
-                                                'factor': factor})
-            index += 1
+            # Can this factor map to this clique?
+            if induced_graph.node[clique_node_name]['scope'] \
+                    .issubset(clique_scope):
+                factors.append(induced_graph.node[clique_node_name]['factor'])
+                node_names_with_used_factors.add(clique_node_name)
 
-            # Add neighbors
-            for c in clique_neighbors:
-                clique_graph.add_edge(clique_name, c)
+        if len(factors) > 0:
+            attr_dict = {'scope': clique_scope,
+                         'factor': get_product_from_list(factors)}
+            clique_name = 'C' + str(len(clique_graph) + 1)
+            clique_graph.add_node(n=clique_name,
+                                  attr_dict=attr_dict)
 
-        # Remove node from consideration
-        I.remove_node(node)
+            for cn, dict_ in clique_graph.nodes_iter(data=True):
+                if cn == clique_name:
+                    continue
+                # TODO: This can lead non-trees
+                sepset = clique_scope.intersection(dict_['scope'])
+                if len(sepset) > 0:
+                    clique_graph.add_edge(u=cn,
+                                          v=clique_name,
+                                          attr_dict={'sepset': sepset})
+
     return clique_graph
+
+
+def get_elim_order(ug):
+    induced_graph = ug.copy()
+    elim_order = []
+    unvisited_nodes = set(induced_graph.nodes(data=False))
+    elim_order, induced_graph = _get_elim_order(induced_graph,
+                                                unvisited_nodes,
+                                                elim_order)
+    return elim_order, induced_graph
+
+
+def _get_elim_order(induced_graph,
+                    unvisited_nodes,
+                    elim_order):
+
+    if len(unvisited_nodes) == 0:
+        return elim_order, induced_graph
+
+    elim_node = None
+    global_min_fill_edges = float('inf')
+    for node in unvisited_nodes:
+        # Get neighboring nodes (exclude ones in elim_order)
+        neighbors = set(induced_graph.neighbors(node)).difference(elim_order)
+
+        # Edges among neighbors
+        num_edges = 0
+        for e1, e2 in combinations(neighbors, 2):
+            if induced_graph.has_edge(e1, e2):
+                num_edges += 1
+
+        # And if they formed complete subgraph
+        # how many edges then?
+        max_num_edges = comb(len(neighbors), 2)
+
+        # What is the difference?
+        num_fill_edges = max_num_edges - num_edges
+
+        # Is this less than the global minimum so far?
+        if num_fill_edges < global_min_fill_edges:
+            elim_node = node
+            global_min_fill_edges = num_fill_edges
+
+    # TODO: Is there a way to do this
+    # within calls to networkx library?
+    neighbors = set(induced_graph.neighbors(elim_node)).difference(elim_order)
+    for n1, n2 in combinations(neighbors, 2):
+        induced_graph.add_edge(n1, n2)
+
+    # Add to elim order
+    elim_order.append(elim_node)
+
+    # Node is now visited
+    unvisited_nodes.remove(elim_node)
+
+    return _get_elim_order(induced_graph,
+                           unvisited_nodes,
+                           elim_order)
+
+    return induced_graph, elim_order
 
 
 def get_moral_graph(dg):
@@ -100,8 +168,12 @@ class BayesianNetwork(object):
             f = Factor(scope=scope,
                        card=card,
                        val=val)
+
+            var_scope = set([node_name] + value['parents'])
             self.add_node(node_name=node_name,
-                          attr_dict={'factor': f})
+                          attr_dict={'factor': f,
+                                     'scope': var_scope})
+
             self.add_parents(node_name, value['parents'])
 
     def __len__(self):
@@ -121,32 +193,22 @@ class BayesianNetwork(object):
             yield node_name
 
     def infer(self):
-        # Convert to moral graph
         ug = get_moral_graph(self._dg)
+        elim_order, induced_graph = get_elim_order(ug)
+        cg = get_clique_graph(elim_order, induced_graph)
+        cg = message_pass(cg)
 
-        # Convert to clique graph
-        cg = get_clique_graph(ug)
-
-        # cg = get_minimum_spanning_tree(cg)
-
-        run_message_passing(cg)
-
+        # Update random variables for all nodes in network
         for clique_node, data in cg.nodes_iter(data=True):
-            node_names = list(data['node_names'])
+            node_names = list(data['scope'])
 
             for i in xrange(len(node_names)):
                 factor = data['factor']
-                # Unmarginalized factor
                 for j in xrange(len(node_names)):
                     if i == j:
                         continue
-                    import pdb; pdb.set_trace()
                     factor = get_marg(factor, self._to_index[node_names[j]])
                 self.set_value(node_names[i], 'rv', factor)
-        import pdb; pdb.set_trace()
-
-        # self.set_value('parent', 'rv', np.array([0.57, 0.43]))
-        # self.set_value('child', 'rv', np.array([0.284, 0.716]))
 
     def get_value(self,
                   node_name,

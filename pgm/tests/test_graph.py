@@ -3,6 +3,7 @@ import json
 
 from pgm.graph import BayesianNetwork
 from pgm.graph import get_moral_graph
+from pgm.graph import get_elim_order
 from pgm.factor import Factor
 from pgm.factor import is_equal
 import networkx as nx
@@ -65,11 +66,11 @@ def test_load_from_json():
     factor = dg.get_value('child', 'factor')
     f = Factor(scope=np.array([1, 0]),
                card=np.array([2, 2]),
-               val=np.array([0.40, 0.13, 0.6, 0.87]))
+               val=np.array([0.40, 0.60, 0.13, 0.87]))
     assert is_equal(f, factor)
 
 
-def test_infer():
+def test_infer_one_parent_child():
     dg = BayesianNetwork()
     with open('one_parent_net.json', 'r') as f:
         json_ = json.load(f)
@@ -78,10 +79,49 @@ def test_infer():
     dg.infer()
 
     rv = dg.get_value('parent', 'rv')
-    assert np.array_equal(np.array([0.57, 0.43]), rv)
+    assert np.allclose(np.array([0.57, 0.43]), rv.val)
 
     rv = dg.get_value('child', 'rv')
-    assert np.array_equal(np.array([0.284, 0.716]), rv)
+    assert np.allclose(np.array([0.2839, 0.7161]), rv.val)
+
+
+def test_infer_simple_network():
+    dg = BayesianNetwork()
+    with open('one_parent_net.json', 'r') as f:
+        json_ = json.load(f)
+        dg.load_graph_from_json(json_)
+
+    dg.infer()
+
+    rv = dg.get_value('parent', 'rv')
+    assert np.allclose(np.array([0.57, 0.43]), rv.val)
+
+    rv = dg.get_value('child', 'rv')
+    assert np.allclose(np.array([0.2839, 0.7161]), rv.val)
+
+
+def test_infer_three_parent_network():
+    dg = BayesianNetwork()
+    with open('three_parent_net.json', 'r') as f:
+        json_ = json.load(f)
+        dg.load_graph_from_json(json_)
+
+    dg.infer()
+
+    rv = dg.get_value('1', 'rv')
+    assert np.allclose(np.array([0.4761765, 0.5238235]), rv.val)
+
+    rv = dg.get_value('2', 'rv')
+    assert np.allclose(np.array([0.9769101, 0.02309]), rv.val)
+
+    rv = dg.get_value('3', 'rv')
+    assert np.allclose(np.array([0.4742067, 0.5257933]), rv.val)
+
+    rv = dg.get_value('4', 'rv')
+    assert np.allclose(np.array([0.4648668, 0.5351332]), rv.val)
+
+    rv = dg.get_value('5', 'rv')
+    assert np.allclose(np.array([0.7121475, 0.2878525]), rv.val)
 
 
 def test_get_moral_graph():
@@ -101,3 +141,15 @@ def test_get_moral_graph():
     assert ug.neighbors(6) == [4, 5, 7]
     assert ug.neighbors(7) == [8, 4, 5, 6]
     assert ug.neighbors(8) == [7]
+
+
+def test_get_elim_order():
+    ug = nx.Graph()
+    ug.add_edge('1', '2')
+    ug.add_edge('2', '3')
+    ug.add_edge('3', '4')
+    ug.add_edge('3', '5')
+    n1 = ug.number_of_edges()
+    elim_order, induced_graph = get_elim_order(ug)
+    n2 = induced_graph.number_of_edges()
+    assert n1 == n2

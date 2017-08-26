@@ -40,8 +40,8 @@ def get_elim_order(G):
         for n1 in R[opt_node]:
             for n2 in R[opt_node]:
                 if n1 != n2:
-                    I[n1].add(n2)
-                    R[n1].add(n2)
+                    I.add_edge(n1, n2)
+                    R.add_edge(n1, n2)
 
         # Remove opt_node from induced graph
         R.remove_node(opt_node)

@@ -11,39 +11,73 @@ from pgm.factor import assign_to_indx
 
 
 def message_pass(cg, to_name):
-    # Pick first node as root
-    # Perform depth first search
     root_node = cg.nodes()[0]
-    descend(root_node, None, cg, to_name)
+    upward_pass(root_node, cg, to_name)
+    downward_pass(root_node, cg, to_name)
+    compute_beliefs(cg)
 
 
-def ascend(node, parent_node, cg, to_name):
-    # Pass message from child to parent
-    # Collect all messages
-    factors = [cg.node[node]['factor']]
-    if len(cg.node[node]['msg']) > 0:
-        factors.extend(cg.node[node]['msg'])
+def compute_beliefs(cg):
+    for n, dict_ in cg.nodes_iter(data=True):
+        belief = [dict_['factor']]
+        belief.extend(dict_['msg_upward'])
+        belief.extend(dict_['msg_downward'])
+        belief = get_product_from_list(belief)
+        cg.node[n]['belief'] = belief
+
+
+def upward_pass(root_node, cg, to_name):
+    descend_first_pass(root_node, None, cg, to_name)
+
+
+def downward_pass(root_node, cg, to_name):
+    descend_second_pass(root_node, cg, to_name)
+
+
+def get_msg(from_node, to_node, is_upward, cg, to_name):
+    msg_type = 'msg_upward' if is_upward else 'msg_downward'
+
+    # Factor for this node
+    factors = [cg.node[from_node]['factor']]
+
+    # Does it have any other messages to combine
+    # before sending?
+    if len(cg.node[from_node][msg_type]) > 0:
+        factors.extend(cg.node[from_node][msg_type])
+
+    # Compute final message
     msg = get_product_from_list(factors)
 
     # Now, marginalize out everything except sepset
-    sepset = cg.get_edge_data(node, parent_node)['sepset']
+    sepset = cg.get_edge_data(from_node, to_node)['sepset']
     scope = msg.scope
     for i in scope:
         name = to_name[i]
         if name not in sepset:
             msg = get_marg(msg, i)
+    return msg
 
-    cg.node[parent_node]['msg'].append(msg)
+
+def ascend(node, parent_node, cg, to_name):
+    # Pass message from child to parent
+    # Collect all messages
+    msg = get_msg(from_node=node,
+                  to_node=parent_node,
+                  is_upward=True,
+                  cg=cg,
+                  to_name=to_name)
+
+    cg.node[parent_node]['msg_upward'].append(msg)
 
     # Is mailbox full?
-    if len(cg.node[parent_node]['msg']) == len(cg.node[parent_node]['children']):
+    if len(cg.node[parent_node]['msg_upward']) == len(cg.node[parent_node]['children']):
         # Don't continue if parent is None;
         # Reached end
         if cg.node[parent_node]['parent'] is not None:
             ascend(cg.node[parent_node], cg.node[parent_node]['parent'], cg, to_name)
 
 
-def descend(node, parent_node, cg, to_name):
+def descend_first_pass(node, parent_node, cg, to_name):
     children = set(cg.neighbors(node))
     if parent_node is not None:
         children.remove(parent_node)
@@ -56,7 +90,18 @@ def descend(node, parent_node, cg, to_name):
             cg.node[parent_node]['children'] = children
         for c in children:
             cg.node[c]['parent'] = node
-            descend(c, node, cg, to_name)
+            descend_first_pass(c, node, cg, to_name)
+
+
+def descend_second_pass(parent_node, cg, to_name):
+    # Send message to each child from parent
+    for c in cg.node[parent_node]['children']:
+        msg = get_msg(from_node=parent_node,
+                  to_node=c,
+                  is_upward=False,
+                  cg=cg,
+                  to_name=to_name)
+        cg.node[c]['msg_downward'].append(msg)
 
 
 def get_clique_graph(elim_order,
@@ -86,7 +131,9 @@ def get_clique_graph(elim_order,
         if len(factors) > 0:
             attr_dict = {'scope': clique_scope,
                          'factor': get_product_from_list(factors),
-                         'msg': [],
+                         'msg_upward': [],
+                         'msg_downward': [],
+                         'belief': None,
                          'children': [],
                          'parent': None}
             clique_name = 'C' + str(len(clique_graph) + 1)
@@ -254,11 +301,16 @@ class BayesianNetwork(object):
             node_names = list(data['scope'])
 
             for i in xrange(len(node_names)):
-                factor = data['factor']
+                factor = data['belief']
                 for j in xrange(len(node_names)):
                     if i == j:
                         continue
                     factor = get_marg(factor, self._to_index[node_names[j]])
+                # Renormalize
+                val = factor.val / factor.val.sum()
+                factor = Factor(scope=factor.scope,
+                                card=factor.card,
+                                val=val)
                 self.set_value(node_names[i], 'rv', factor)
 
     def get_value(self,

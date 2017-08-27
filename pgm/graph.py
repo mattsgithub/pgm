@@ -14,7 +14,6 @@ def message_pass(cg, to_name):
     root_node = cg.nodes()[0]
     upward_pass(root_node, cg, to_name)
     downward_pass(root_node, cg, to_name)
-    compute_beliefs(cg)
 
 
 def compute_beliefs(cg):
@@ -295,6 +294,7 @@ class BayesianNetwork(object):
 
         if len(cg) > 1:
             message_pass(cg, self._to_name)
+        compute_beliefs(cg)
 
         # Update random variables for all nodes in network
         for clique_node, data in cg.nodes_iter(data=True):

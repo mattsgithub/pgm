@@ -106,22 +106,30 @@ def test_infer_three_parent_network():
         json_ = json.load(f)
         dg.load_graph_from_json(json_)
 
+    with open('three_parent_net_answer.json', 'r') as f:
+        answer = json.load(f)
+
     dg.infer()
 
-    rv = dg.get_value('1', 'rv')
-    assert np.allclose(np.array([0.4761765, 0.5238235]), rv.val)
+    for node in dg._dg.node:
+        rv = dg.get_value(node, 'rv')
+        assert np.allclose(np.array(answer[node]), rv.val)
 
-    rv = dg.get_value('2', 'rv')
-    assert np.allclose(np.array([0.9769101, 0.02309]), rv.val)
 
-    rv = dg.get_value('3', 'rv')
-    assert np.allclose(np.array([0.4742067, 0.5257933]), rv.val)
+def test_infer_large_network():
+    dg = BayesianNetwork()
+    with open('large_network.json', 'r') as f:
+        json_ = json.load(f)
+        dg.load_graph_from_json(json_)
 
-    rv = dg.get_value('4', 'rv')
-    assert np.allclose(np.array([0.4648668, 0.5351332]), rv.val)
+    with open('large_network_answer.json', 'r') as f:
+        answer = json.load(f)
 
-    rv = dg.get_value('5', 'rv')
-    assert np.allclose(np.array([0.7121475, 0.2878525]), rv.val)
+    dg.infer()
+
+    for node in dg._dg.node:
+        rv = dg.get_value(node, 'rv')
+        assert np.allclose(np.array(answer[node]), rv.val)
 
 
 def test_get_moral_graph():

@@ -26,7 +26,11 @@ def compute_beliefs(cg):
 
 
 def upward_pass(root_node, cg, to_name):
-    descend_first_pass(root_node, None, cg, to_name)
+    children = set(cg.neighbors(root_node))
+    cg.node[root_node]['children'] = children
+    for c in children:
+        cg.node[c]['parent'] = root_node
+        descend_first_pass(c, cg, to_name)
 
 
 def downward_pass(root_node, cg, to_name):
@@ -58,6 +62,7 @@ def get_msg(from_node, to_node, is_upward, cg, to_name):
 
 
 def ascend(node, parent_node, cg, to_name):
+    print 'ascend {0} --> {1}'.format(node, parent_node)
     # Pass message from child to parent
     # Collect all messages
     msg = get_msg(from_node=node,
@@ -70,36 +75,38 @@ def ascend(node, parent_node, cg, to_name):
 
     # Is mailbox full?
     if len(cg.node[parent_node]['msg_upward']) == len(cg.node[parent_node]['children']):
-        # Don't continue if parent is None;
-        # Reached end
         if cg.node[parent_node]['parent'] is not None:
-            ascend(cg.node[parent_node], cg.node[parent_node]['parent'], cg, to_name)
+            ascend(parent_node, cg.node[parent_node]['parent'], cg, to_name)
 
 
-def descend_first_pass(node, parent_node, cg, to_name):
+def descend_first_pass(node, cg, to_name):
+    parent_node = cg.node[node]['parent']
+    print 'descend first pass {0} --> {1}'.format(parent_node, node)
+
+    # Get children of node
     children = set(cg.neighbors(node))
-    if parent_node is not None:
-        children.remove(parent_node)
+    children.remove(parent_node)
 
     # Reached a leaf node
     if len(children) == 0:
         ascend(node, parent_node, cg, to_name)
     else:
-        if parent_node is not None:
-            cg.node[parent_node]['children'] = children
+        cg.node[node]['children'] = children
         for c in children:
             cg.node[c]['parent'] = node
-            descend_first_pass(c, node, cg, to_name)
+            descend_first_pass(c, cg, to_name)
 
 
 def descend_second_pass(parent_node, cg, to_name):
     # Send message to each child from parent
     for c in cg.node[parent_node]['children']:
+        print 'descend second pass {0} -> {1}'.format(parent_node, c)
+
         msg = get_msg(from_node=parent_node,
-                  to_node=c,
-                  is_upward=False,
-                  cg=cg,
-                  to_name=to_name)
+                      to_node=c,
+                      is_upward=False,
+                      cg=cg,
+                      to_name=to_name)
         cg.node[c]['msg_downward'].append(msg)
 
 
@@ -122,8 +129,7 @@ def get_clique_graph(elim_order,
                 continue
 
             # Can this factor map to this clique?
-            if induced_graph.node[clique_node_name]['scope'] \
-                    .issubset(clique_scope):
+            if induced_graph.node[clique_node_name]['scope'].issubset(clique_scope):
                 factors.append(induced_graph.node[clique_node_name]['factor'])
                 node_names_with_used_factors.add(clique_node_name)
 
@@ -139,16 +145,20 @@ def get_clique_graph(elim_order,
             clique_graph.add_node(n=clique_name,
                                   attr_dict=attr_dict)
 
-            for cn, dict_ in clique_graph.nodes_iter(data=True):
-                if cn == clique_name:
-                    continue
-                # TODO: This can lead non-trees
-                sepset = clique_scope.intersection(dict_['scope'])
-                if len(sepset) > 0:
-                    clique_graph.add_edge(u=cn,
-                                          v=clique_name,
-                                          attr_dict={'sepset': sepset})
+    # Connect cliques that have any variables
+    # in common
+    for cn1, dict1 in clique_graph.nodes_iter(data=True):
+        for cn2, dict2 in clique_graph.nodes_iter(data=True):
+            if cn1 == cn2:
+                continue
+            sepset = dict1['scope'].intersection(dict2['scope'])
+            n = len(sepset)
+            if n > 0:
+                clique_graph.add_edge(u=cn1,
+                                      v=cn2,
+                                      attr_dict={'sepset': sepset, 'weight': -n})
 
+    clique_graph = nx.minimum_spanning_tree(clique_graph)
     return clique_graph
 
 
@@ -298,10 +308,14 @@ class BayesianNetwork(object):
 
         # Update random variables for all nodes in network
         for clique_node, data in cg.nodes_iter(data=True):
-            node_names = list(data['scope'])
+
+            indices = data['belief'].scope
+            node_names = [self._to_name[i] for i in indices]
 
             for i in xrange(len(node_names)):
                 factor = data['belief']
+                print ''
+                print 'Computing belief for ' + node_names[i]
                 for j in xrange(len(node_names)):
                     if i == j:
                         continue
@@ -312,6 +326,7 @@ class BayesianNetwork(object):
                                 card=factor.card,
                                 val=val)
                 self.set_value(node_names[i], 'rv', factor)
+                print 'Belief for {0} is {1}'.format(node_names[i], val)
 
     def get_value(self,
                   node_name,

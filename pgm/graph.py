@@ -10,6 +10,26 @@ from pgm.factor import get_marg
 from pgm.factor import assign_to_indx
 
 
+def check_calibration(cg, to_index, to_name):
+    beliefs = defaultdict(list)
+    for clique_node, data in cg.nodes_iter(data=True):
+        indices = data['belief'].scope
+        node_names = [to_name[i] for i in indices]
+
+        for i in xrange(len(node_names)):
+            factor = data['belief']
+            for j in xrange(len(node_names)):
+                if i == j:
+                    continue
+                factor = get_marg(factor, to_index[node_names[j]])
+            # Renormalize
+            val = factor.val / factor.val.sum()
+            beliefs[node_names[i]].append(val)
+    for k, v in beliefs.iteritems():
+        print k, v
+        print ''
+
+
 def message_pass(cg, to_name):
     root_node = cg.nodes()[0]
     upward_pass(root_node, cg, to_name)
@@ -19,8 +39,13 @@ def message_pass(cg, to_name):
 def compute_beliefs(cg):
     for n, dict_ in cg.nodes_iter(data=True):
         belief = [dict_['factor']]
-        belief.extend(dict_['msg_upward'])
-        belief.extend(dict_['msg_downward'])
+
+        for m in dict_['msg_upward']:
+            belief.append(m['msg'])
+
+        for m in dict_['msg_downward']:
+            belief.append(m['msg'])
+
         belief = get_product_from_list(belief)
         cg.node[n]['belief'] = belief
 
@@ -43,12 +68,16 @@ def get_msg(from_node, to_node, is_upward, cg, to_name):
     # Factor for this node
     factors = [cg.node[from_node]['factor']]
 
-    # Does it have any other messages to combine
-    # before sending?
-    if len(cg.node[from_node][msg_type]) > 0:
-        factors.extend(cg.node[from_node][msg_type])
+    is_root = cg.node[from_node]['parent'] is None
 
-    # Compute final message
+    if is_root and 'msg_downard':
+        for d in cg.node[from_node]['msg_upward']:
+            if d['name'] == '{0}->{1}'.format(to_node, from_node):
+                continue
+            factors.append(d['msg'])
+    elif len(cg.node[from_node][msg_type]) > 0:
+        for d in cg.node[from_node][msg_type]:
+            factors.append(d['msg'])
     msg = get_product_from_list(factors)
 
     # Now, marginalize out everything except sepset
@@ -63,18 +92,18 @@ def get_msg(from_node, to_node, is_upward, cg, to_name):
 
 def ascend(node, parent_node, cg, to_name):
     print 'ascend {0} --> {1}'.format(node, parent_node)
-    # Pass message from child to parent
-    # Collect all messages
     msg = get_msg(from_node=node,
                   to_node=parent_node,
                   is_upward=True,
                   cg=cg,
                   to_name=to_name)
 
-    cg.node[parent_node]['msg_upward'].append(msg)
+    msg_name = '{0}->{1}'.format(node, parent_node)
+    cg.node[parent_node]['msg_upward'].append({'name': msg_name, 'msg': msg})
 
     # Is mailbox full?
     if len(cg.node[parent_node]['msg_upward']) == len(cg.node[parent_node]['children']):
+        # If false, we've reached the root of the tree
         if cg.node[parent_node]['parent'] is not None:
             ascend(parent_node, cg.node[parent_node]['parent'], cg, to_name)
 
@@ -107,43 +136,48 @@ def descend_second_pass(parent_node, cg, to_name):
                       is_upward=False,
                       cg=cg,
                       to_name=to_name)
-        cg.node[c]['msg_downward'].append(msg)
+
+        msg_name = '{0}->{1}'.format(parent_node, c)
+        cg.node[c]['msg_downward'].append({'name': msg_name, 'msg': msg})
+
+        descend_second_pass(c, cg, to_name)
 
 
 def get_clique_graph(elim_order,
-                     induced_graph):
+                     induced_graph,
+                     to_name):
 
     clique_graph = nx.Graph()
-    node_names_with_used_factors = set()
+    U = set()
 
     for node_name in elim_order:
+        clique = set(induced_graph.neighbors(node_name))
+        clique.add(node_name)
 
-        # Establish scope for this clique
-        clique_scope = set(induced_graph.neighbors(node_name))
-        clique_scope.add(node_name)
-
+        clique_scope = set()
         factors = []
-        for clique_node_name in clique_scope:
-            # Has this factor already been used?
-            if clique_node_name in node_names_with_used_factors:
-                continue
 
-            # Can this factor map to this clique?
-            if induced_graph.node[clique_node_name]['scope'].issubset(clique_scope):
-                factors.append(induced_graph.node[clique_node_name]['factor'])
-                node_names_with_used_factors.add(clique_node_name)
+        for c in clique:
+            if c not in U:
+                factor = induced_graph.node[c]['factor']
+                clique_scope.update(set([to_name[i] for i in factor.scope]))
+                factors.append(factor)
+        U.update(clique)
+        if len(factors) == 0:
+            continue
 
-        if len(factors) > 0:
-            attr_dict = {'scope': clique_scope,
-                         'factor': get_product_from_list(factors),
-                         'msg_upward': [],
-                         'msg_downward': [],
-                         'belief': None,
-                         'children': [],
-                         'parent': None}
-            clique_name = 'C' + str(len(clique_graph) + 1)
-            clique_graph.add_node(n=clique_name,
-                                  attr_dict=attr_dict)
+        factor = get_product_from_list(factors)
+
+        attr_dict = {'scope': clique_scope,
+                     'factor': factor,
+                     'msg_upward': [],
+                     'msg_downward': [],
+                     'belief': None,
+                     'children': [],
+                     'parent': None}
+        clique_name = 'C' + str(len(clique_graph) + 1)
+        clique_graph.add_node(n=clique_name,
+                              attr_dict=attr_dict)
 
     # Connect cliques that have any variables
     # in common
@@ -300,11 +334,13 @@ class BayesianNetwork(object):
     def infer(self):
         ug = get_moral_graph(self._dg)
         elim_order, induced_graph = get_elim_order(ug)
-        cg = get_clique_graph(elim_order, induced_graph)
+        cg = get_clique_graph(elim_order, induced_graph, self._to_name)
 
         if len(cg) > 1:
             message_pass(cg, self._to_name)
         compute_beliefs(cg)
+
+        check_calibration(cg, self._to_index, self._to_name)
 
         # Update random variables for all nodes in network
         for clique_node, data in cg.nodes_iter(data=True):
@@ -327,6 +363,8 @@ class BayesianNetwork(object):
                                 val=val)
                 self.set_value(node_names[i], 'rv', factor)
                 print 'Belief for {0} is {1}'.format(node_names[i], val)
+                print ''
+                print ''
 
     def get_value(self,
                   node_name,

@@ -91,7 +91,7 @@ def get_msg(from_node, to_node, is_upward, cg, to_name):
 
 
 def ascend(node, parent_node, cg, to_name):
-    print 'ascend {0} --> {1}'.format(node, parent_node)
+    # print 'ascend {0} --> {1}'.format(node, parent_node)
     msg = get_msg(from_node=node,
                   to_node=parent_node,
                   is_upward=True,
@@ -110,7 +110,7 @@ def ascend(node, parent_node, cg, to_name):
 
 def descend_first_pass(node, cg, to_name):
     parent_node = cg.node[node]['parent']
-    print 'descend first pass {0} --> {1}'.format(parent_node, node)
+    # print 'descend first pass {0} --> {1}'.format(parent_node, node)
 
     # Get children of node
     children = set(cg.neighbors(node))
@@ -129,7 +129,7 @@ def descend_first_pass(node, cg, to_name):
 def descend_second_pass(parent_node, cg, to_name):
     # Send message to each child from parent
     for c in cg.node[parent_node]['children']:
-        print 'descend second pass {0} -> {1}'.format(parent_node, c)
+        # print 'descend second pass {0} -> {1}'.format(parent_node, c)
 
         msg = get_msg(from_node=parent_node,
                       to_node=c,
@@ -340,7 +340,7 @@ class BayesianNetwork(object):
             message_pass(cg, self._to_name)
         compute_beliefs(cg)
 
-        check_calibration(cg, self._to_index, self._to_name)
+        # check_calibration(cg, self._to_index, self._to_name)
 
         # Update random variables for all nodes in network
         for clique_node, data in cg.nodes_iter(data=True):
@@ -350,8 +350,6 @@ class BayesianNetwork(object):
 
             for i in xrange(len(node_names)):
                 factor = data['belief']
-                print ''
-                print 'Computing belief for ' + node_names[i]
                 for j in xrange(len(node_names)):
                     if i == j:
                         continue
@@ -362,9 +360,6 @@ class BayesianNetwork(object):
                                 card=factor.card,
                                 val=val)
                 self.set_value(node_names[i], 'rv', factor)
-                print 'Belief for {0} is {1}'.format(node_names[i], val)
-                print ''
-                print ''
 
     def get_value(self,
                   node_name,

@@ -116,13 +116,13 @@ def test_infer_three_parent_network():
         assert np.allclose(np.array(answer[node]), rv.val)
 
 
-def test_infer_large_network():
+def test_16_network():
     dg = BayesianNetwork()
-    with open('large_network.json', 'r') as f:
+    with open('16_network.json', 'r') as f:
         json_ = json.load(f)
         dg.load_graph_from_json(json_)
 
-    with open('large_network_answer.json', 'r') as f:
+    with open('16_network_answer.json', 'r') as f:
         answer = json.load(f)
 
     dg.infer()
@@ -130,6 +130,23 @@ def test_infer_large_network():
     for node in dg._dg.node:
         rv = dg.get_value(node, 'rv')
         assert np.allclose(np.array(answer[node]), rv.val)
+
+
+def test_50_network():
+    dg = BayesianNetwork()
+    with open('50_network.json', 'r') as f:
+        json_ = json.load(f)
+        dg.load_graph_from_json(json_)
+
+    with open('50_network_answer.json', 'r') as f:
+        answer = json.load(f)
+
+    dg.infer()
+
+    for node in dg._dg.node:
+        rv = dg.get_value(node, 'rv')
+        assert np.allclose(np.array(answer[node]), rv.val), node
+
 
 
 def test_get_moral_graph():

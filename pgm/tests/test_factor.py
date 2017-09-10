@@ -70,6 +70,22 @@ def f3():
                   val=np.array([0.39, 0.61, 0.06, 0.94]))
 
 
+@pytest.fixture(scope='module')
+def f4():
+    '''
+       f4
+    [4  5  phi]
+    ------------
+    [0  0  0.39]
+    [1  0  0.61]
+    [0  1  0.06]
+    [1  1  0.94]
+    '''
+    return Factor(scope=np.array([4, 5]),
+                  card=np.array([2, 2]),
+                  val=np.array([0.39, 0.61, 0.06, 0.94]))
+
+
 def test_assign_to_indx():
     '''
        f
@@ -137,6 +153,12 @@ def test_get_stride():
 
     f = get_stride(np.array([2, 4, 2]))
     assert np.allclose(f, np.array([1, 2, 8]))
+
+
+def test_f3_f4_product(f3, f4):
+    f = get_product(f3, f4)
+    assert np.allclose(f.scope, np.array([2, 3, 4, 5]))
+    assert np.allclose(f.card, np.array([2, 2, 2, 2]))
 
 
 def test_f1_f2_product(f1, f2):

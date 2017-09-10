@@ -5,6 +5,22 @@ import numpy as np
 Factor = namedtuple('Factor', 'scope card val')
 
 
+def renormalize(f):
+    val = f.val / f.val.sum()
+    factor = Factor(scope=f.scope,
+                    card=f.card,
+                    val=val)
+    return factor
+
+
+def log(f):
+    val = np.log(f.val)
+    factor = Factor(scope=f.scope,
+                    card=f.card,
+                    val=val)
+    return factor
+
+
 def get_matching_indices(f1,
                          f2,
                          map1,
@@ -150,30 +166,12 @@ def get_marg(A, v):
                   val)
 
 
-def get_product_from_list(fs):
-    """Get product from a list of factors
-    """
-    if len(fs) == 0:
-        raise ValueError('factor list must be greater than 1')
-
-    if len(fs) == 1:
-        return fs[0]
-
-    for i in range(len(fs)):
-        for j in range(len(fs)):
-            if i != j:
-                s = set(fs[i].scope)
-                r = set(fs[j].scope)
-
-                if len(s.intersection(r)) > 0:
-                    f = get_product(fs[i], fs[j])
-                    del fs[i]
-                    del fs[j-1]
-                    fs.append(f)
-                    return get_product_from_list(fs)
+def get_product_from_list(f, logspace=False):
+    fu = lambda x, y, logspace=logspace: get_product(x, y, logspace=logspace)
+    return reduce(fu, f)
 
 
-def get_product(A, B):
+def get_product(A, B, logspace=False):
     scope = np.union1d(A.scope, B.scope)
 
     mapA, mapB = get_mappings(A.scope,
@@ -191,7 +189,13 @@ def get_product(A, B):
     indx_A = assign_to_indx(assign[:, mapA], A.card)
     indx_B = assign_to_indx(assign[:, mapB], B.card)
 
-    val = A.val[indx_A] * B.val[indx_B]
+    if logspace:
+        A = log(A)
+        B = log(B)
+        val = A.val[indx_A] + B.val[indx_B]
+        val = np.exp(val)
+    else:
+        val = A.val[indx_A] * B.val[indx_B]
 
     return Factor(scope,
                   card,

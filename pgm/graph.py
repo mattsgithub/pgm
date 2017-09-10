@@ -5,12 +5,14 @@ import networkx as nx
 from scipy.misc import comb
 
 from pgm.factor import Factor
+from pgm.factor import renormalize
 from pgm.factor import get_product_from_list
 from pgm.factor import get_marg
 from pgm.factor import assign_to_indx
 
 
 def check_calibration(cg, to_index, to_name):
+
     beliefs = defaultdict(list)
     for clique_node, data in cg.nodes_iter(data=True):
         indices = data['belief'].scope
@@ -25,6 +27,7 @@ def check_calibration(cg, to_index, to_name):
             # Renormalize
             val = factor.val / factor.val.sum()
             beliefs[node_names[i]].append(val)
+
     for k, v in beliefs.iteritems():
         print k, v
         print ''
@@ -70,15 +73,25 @@ def get_msg(from_node, to_node, is_upward, cg, to_name):
 
     is_root = cg.node[from_node]['parent'] is None
 
+    msg_names = []
     if is_root and 'msg_downard':
         for d in cg.node[from_node]['msg_upward']:
             if d['name'] == '{0}->{1}'.format(to_node, from_node):
                 continue
             factors.append(d['msg'])
+            msg_names.append(d['name'])
     elif len(cg.node[from_node][msg_type]) > 0:
         for d in cg.node[from_node][msg_type]:
             factors.append(d['msg'])
-    msg = get_product_from_list(factors)
+            msg_names.append(d['name'])
+
+    msg = get_product_from_list(factors, logspace=True)
+
+    s = 'Phi({0})  {1}'.format(from_node, msg_names)
+    if is_upward:
+        print 'Up {0} -> {1}: {2}'.format(from_node, to_node, s)
+    else:
+        print 'Down {0} -> {1}: {2}'.format(from_node, to_node, s)
 
     # Now, marginalize out everything except sepset
     sepset = cg.get_edge_data(from_node, to_node)['sepset']
@@ -87,11 +100,11 @@ def get_msg(from_node, to_node, is_upward, cg, to_name):
         name = to_name[i]
         if name not in sepset:
             msg = get_marg(msg, i)
+
     return msg
 
 
 def ascend(node, parent_node, cg, to_name):
-    # print 'ascend {0} --> {1}'.format(node, parent_node)
     msg = get_msg(from_node=node,
                   to_node=parent_node,
                   is_upward=True,
@@ -110,7 +123,6 @@ def ascend(node, parent_node, cg, to_name):
 
 def descend_first_pass(node, cg, to_name):
     parent_node = cg.node[node]['parent']
-    # print 'descend first pass {0} --> {1}'.format(parent_node, node)
 
     # Get children of node
     children = set(cg.neighbors(node))
@@ -129,8 +141,6 @@ def descend_first_pass(node, cg, to_name):
 def descend_second_pass(parent_node, cg, to_name):
     # Send message to each child from parent
     for c in cg.node[parent_node]['children']:
-        # print 'descend second pass {0} -> {1}'.format(parent_node, c)
-
         msg = get_msg(from_node=parent_node,
                       to_node=c,
                       is_upward=False,
@@ -149,10 +159,18 @@ def get_clique_graph(elim_order,
 
     clique_graph = nx.Graph()
     U = set()
+    elim_nodes = set()
 
     for node_name in elim_order:
-        clique = set(induced_graph.neighbors(node_name))
-        clique.add(node_name)
+        clique = {node_name}
+        neighbors = set([n for n in induced_graph.neighbors(node_name) if n not in elim_nodes])
+        clique.update(neighbors)
+
+        # Never use again
+        elim_nodes.add(node_name)
+
+        if len(clique) == 0:
+            continue
 
         clique_scope = set()
         factors = []
@@ -340,7 +358,7 @@ class BayesianNetwork(object):
             message_pass(cg, self._to_name)
         compute_beliefs(cg)
 
-        # check_calibration(cg, self._to_index, self._to_name)
+        check_calibration(cg, self._to_index, self._to_name)
 
         # Update random variables for all nodes in network
         for clique_node, data in cg.nodes_iter(data=True):
@@ -354,11 +372,8 @@ class BayesianNetwork(object):
                     if i == j:
                         continue
                     factor = get_marg(factor, self._to_index[node_names[j]])
-                # Renormalize
-                val = factor.val / factor.val.sum()
-                factor = Factor(scope=factor.scope,
-                                card=factor.card,
-                                val=val)
+
+                factor = renormalize(factor)
                 self.set_value(node_names[i], 'rv', factor)
 
     def get_value(self,

@@ -93,7 +93,7 @@ def write_posterior_beliefs(nodes):
     json_ = dict()
     for n in nodes:
         json_[n['name']] = n['belief']
-    with open('/Users/MattJohnson/Desktop/simple_network_answer.json', 'w') as f:
+    with open('/Users/MattJohnson/Development/git/pgm/pgm/tests/50_network_answer.json', 'w') as f:
         json.dump(json_, f)
 
 
@@ -123,10 +123,10 @@ def write_nodes(nodes):
                                         'value': row['prob'][1]})
         j[n['name']] = dict_
 
-    with open('/Users/MattJohnson/Desktop/simple_network.json', 'w') as f:
+    with open('/Users/MattJohnson/Development/git/pgm/pgm/tests/50_network.json', 'w') as f:
         json.dump(j, f)
 
-file_path = '/Users/MattJohnson/Development/git/pgm/netica/simple_network.dne'
+file_path = '/Users/MattJohnson/Development/git/pgm/netica/50_network.dne'
 nodes = parse_netica_dne_file(file_path)
 write_nodes(nodes)
 write_posterior_beliefs(nodes)

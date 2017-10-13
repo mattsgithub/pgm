@@ -3,6 +3,8 @@ import pytest
 import numpy as np
 
 from pgm.factor import Factor
+from pgm.factor import log
+from pgm.factor import exp
 from pgm.factor import get_marg
 from pgm.factor import get_mappings
 from pgm.factor import is_equal
@@ -161,6 +163,17 @@ def test_f3_f4_product(f3, f4):
     assert np.allclose(f.card, np.array([2, 2, 2, 2]))
 
 
+def test_f1_f2_product_log_space(f1, f2):
+    f = get_product(log(f1), log(f2), use_log_space=True)
+    f = exp(f)
+    assert np.allclose(f.scope, np.array([1, 2]))
+    assert np.allclose(f.card, np.array([2, 2]))
+    assert np.allclose(f.val, np.array([0.11 * 0.59,
+                                        0.89 * 0.22,
+                                        0.11 * 0.41,
+                                        0.89 * 0.78]))
+
+
 def test_f1_f2_product(f1, f2):
     '''
        f2
@@ -240,6 +253,17 @@ def test_f1_f3_product(f1, f3):
 
 def test_get_product_from_list(f1, f2):
     f = get_product_from_list([f1, f2])
+    assert np.allclose(f.scope, np.array([1, 2]))
+    assert np.allclose(f.card, np.array([2, 2]))
+    assert np.allclose(f.val, np.array([0.11 * 0.59,
+                                        0.89 * 0.22,
+                                        0.11 * 0.41,
+                                        0.89 * 0.78]))
+
+
+def test_get_product_from_list_log_space(f1, f2):
+    f = get_product_from_list([log(f1), log(f2)], use_log_space=True)
+    f = exp(f)
     assert np.allclose(f.scope, np.array([1, 2]))
     assert np.allclose(f.card, np.array([2, 2]))
     assert np.allclose(f.val, np.array([0.11 * 0.59,
@@ -361,6 +385,28 @@ def test_another_marg():
 
     f = get_product(f1, f2)
     f_marg = get_marg(f, 1)
+
+    assert np.array_equal(f_marg.scope, np.array([0]))
+    assert np.array_equal(f_marg.card, np.array([2]))
+    assert np.allclose(f_marg.val, np.array([0.57, 0.43]))
+
+
+def test_another_marg_log_space():
+    f1 = Factor(scope=np.array([0]),
+                card=np.array([2], dtype=np.int32),
+                val=np.array([0.57, 0.43]))
+
+    f2 = Factor(scope=np.array([1, 0]),
+                card=np.array([2, 2], dtype=np.int32),
+                val=np.array([0.4, 0.6, 0.13, 0.87]))
+
+    f1 = log(f1)
+    f2 = log(f2)
+
+    f = get_product(f1, f2, use_log_space=True)
+    f_marg = get_marg(f, 1, use_log_space=True)
+
+    f_marg = exp(f_marg)
 
     assert np.array_equal(f_marg.scope, np.array([0]))
     assert np.array_equal(f_marg.card, np.array([2]))

@@ -85,7 +85,7 @@ def test_infer_one_parent_child():
     assert np.allclose(np.array([0.2839, 0.7161]), rv.val)
 
 
-def test_infer_simple_network():
+def test_2_network():
     dg = BayesianNetwork()
     with open('one_parent_net.json', 'r') as f:
         json_ = json.load(f)
@@ -100,7 +100,7 @@ def test_infer_simple_network():
     assert np.allclose(np.array([0.2839, 0.7161]), rv.val)
 
 
-def test_infer_three_parent_network():
+def test_4_network():
     dg = BayesianNetwork()
     with open('three_parent_net.json', 'r') as f:
         json_ = json.load(f)

@@ -5,15 +5,59 @@ import networkx as nx
 from scipy.misc import comb
 
 from pgm.factor import Factor
+from pgm.factor import log
+from pgm.factor import exp
+from pgm.factor import Scalar
 from pgm.factor import renormalize
 from pgm.factor import get_product_from_list
+from pgm.factor import get_product
 from pgm.factor import get_marg
 from pgm.factor import assign_to_indx
 
 
-def check_calibration(cg, to_index, to_name):
+def write_graph(cg, to_name):
+    S = set()
+    with open('/Users/MattJohnson/Desktop/network.txt', 'w') as f:
+        f.write('Source;Target\n')
+        for n1 in cg.node:
+            for n2 in cg.neighbors(n1):
 
-    beliefs = defaultdict(list)
+                n1_factor = ''
+                n1_scope = ','.join(cg.node[n1]['scope'])
+                if cg.node[n1]['factor'] is not None:
+                    n1_factor = ','.join([to_name[s] for s in cg.node[n1]['factor'].scope])
+                n1_name = '{0} F({1}) S({2})'.format(n1, n1_factor, n1_scope)
+
+                n2_factor = ''
+                n2_scope = ','.join(cg.node[n2]['scope'])
+                if cg.node[n2]['factor'] is not None:
+                    n2_factor = ','.join([to_name[s] for s in cg.node[n2]['factor'].scope])
+                n2_name = '{0} F({1}) S({2})'.format(n2, n2_factor, n2_scope)
+
+                name = ''.join(sorted([n1_name, n2_name]))
+                if name in S:
+                    continue
+                f.write('{0};{1}\n'.format(n1_name, n2_name))
+                S.add(name)
+
+
+def check_rip(cg):
+    # Get names of full scope
+    scopes = set()
+    for name, data in cg.nodes_iter(data=True):
+        scopes.update(data['scope'])
+
+    for s in scopes:
+        nodes = []
+        for name, data in cg.nodes_iter(data=True):
+            if s in data['scope']:
+                nodes.append(name)
+        H = cg.subgraph(nodes)
+        print '{0} {1} satisify RIP'.format(s, 'does' if nx.is_connected(H) else 'does not')
+
+
+def check_calibration(cg, to_index, to_name):
+    beliefs = dict()
     for clique_node, data in cg.nodes_iter(data=True):
         indices = data['belief'].scope
         node_names = [to_name[i] for i in indices]
@@ -23,14 +67,15 @@ def check_calibration(cg, to_index, to_name):
             for j in xrange(len(node_names)):
                 if i == j:
                     continue
-                factor = get_marg(factor, to_index[node_names[j]])
+                factor = get_marg(factor, to_index[node_names[j]], use_log_space=True)
             # Renormalize
             val = factor.val / factor.val.sum()
-            beliefs[node_names[i]].append(val)
+            if node_names[i] not in beliefs:
+                beliefs[node_names[i]] = {'val': []}
+            beliefs[node_names[i]]['val'].append((clique_node, val))
 
     for k, v in beliefs.iteritems():
-        print k, v
-        print ''
+        print k, v['val']
 
 
 def message_pass(cg, to_name):
@@ -49,7 +94,7 @@ def compute_beliefs(cg):
         for m in dict_['msg_downward']:
             belief.append(m['msg'])
 
-        belief = get_product_from_list(belief)
+        belief = get_product_from_list(belief, use_log_space=True)
         cg.node[n]['belief'] = belief
 
 
@@ -66,26 +111,34 @@ def downward_pass(root_node, cg, to_name):
 
 
 def get_msg(from_node, to_node, is_upward, cg, to_name):
-    msg_type = 'msg_upward' if is_upward else 'msg_downward'
+    factors = []
 
-    # Factor for this node
-    factors = [cg.node[from_node]['factor']]
-
-    is_root = cg.node[from_node]['parent'] is None
+    # Use factor from node
+    f = cg.node[from_node]['factor']
+    if f is not None:
+        factors = [cg.node[from_node]['factor']]
 
     msg_names = []
-    if is_root and 'msg_downard':
+
+    if is_upward:
         for d in cg.node[from_node]['msg_upward']:
-            if d['name'] == '{0}->{1}'.format(to_node, from_node):
-                continue
             factors.append(d['msg'])
             msg_names.append(d['name'])
-    elif len(cg.node[from_node][msg_type]) > 0:
-        for d in cg.node[from_node][msg_type]:
+    else:
+        for d in cg.node[from_node]['msg_upward']:
+            if d['name'] != '{0}->{1}'.format(to_node, from_node):
+                factors.append(d['msg'])
+                msg_names.append(d['name'])
+
+        for d in cg.node[from_node]['msg_downward']:
             factors.append(d['msg'])
             msg_names.append(d['name'])
 
-    msg = get_product_from_list(factors, logspace=True)
+    """
+    if len(factors) == 32:
+        import pdb; pdb.set_trace()
+    """
+    msg = get_product_from_list(factors, use_log_space=True)
 
     s = 'Phi({0})  {1}'.format(from_node, msg_names)
     if is_upward:
@@ -93,13 +146,13 @@ def get_msg(from_node, to_node, is_upward, cg, to_name):
     else:
         print 'Down {0} -> {1}: {2}'.format(from_node, to_node, s)
 
-    # Now, marginalize out everything except sepset
-    sepset = cg.get_edge_data(from_node, to_node)['sepset']
-    scope = msg.scope
-    for i in scope:
-        name = to_name[i]
-        if name not in sepset:
-            msg = get_marg(msg, i)
+    if not isinstance(msg, Scalar):
+        sepset = cg.get_edge_data(from_node, to_node)['sepset']
+        scope = msg.scope
+        for i in scope:
+            name = to_name[i]
+            if name not in sepset:
+                msg = get_marg(msg, i, use_log_space=True)
 
     return msg
 
@@ -158,35 +211,55 @@ def get_clique_graph(elim_order,
                      to_name):
 
     clique_graph = nx.Graph()
-    U = set()
-    elim_nodes = set()
+    factors = dict()
+    f_count = 1
+
+    # Store factors in dictionary
+    for name, dict_ in induced_graph.nodes_iter(data=True):
+        factor = dict_['factor']
+        factor_scope = set([to_name[i] for i in factor.scope])
+        factors[f_count] = {'factor': factor, 'scope': factor_scope}
+        f_count += 1
 
     for node_name in elim_order:
-        clique = {node_name}
-        neighbors = set([n for n in induced_graph.neighbors(node_name) if n not in elim_nodes])
-        clique.update(neighbors)
-
-        # Never use again
-        elim_nodes.add(node_name)
-
-        if len(clique) == 0:
-            continue
-
+        # Any previous messages that should be included
+        # in this scope? (generated from other cliques)
+        edges = []
         clique_scope = set()
-        factors = []
 
-        for c in clique:
-            if c not in U:
-                factor = induced_graph.node[c]['factor']
-                clique_scope.update(set([to_name[i] for i in factor.scope]))
-                factors.append(factor)
-        U.update(clique)
-        if len(factors) == 0:
-            continue
+        for name, dict_ in clique_graph.nodes_iter(data=True):
+            # Do not connect to used messages
+            if dict_['msg_used']:
+                continue
+            if node_name in dict_['msg_scope']:
+                clique_scope.update(dict_['msg_scope'])
+                edges.append(name)
+                dict_['msg_used'] = True
 
-        factor = get_product_from_list(factors)
+        # Find factors with node name
+        # in scope
+        fs = []
+        nodes_used = set()
+        factor_names = factors.keys()
+        for n in factor_names:
+            if node_name in factors[n]['scope']:
+                fs.append(factors[n]['factor'])
+                nodes_used.add(n)
+                del factors[n]
+
+        factor = None
+        if len(fs) > 0:
+            factor = get_product_from_list(fs, use_log_space=True)
+            factor_scope = set([to_name[i] for i in factor.scope])
+            clique_scope.update(factor_scope)
+
+        msg_scope = clique_scope.copy()
+        msg_scope.remove(node_name)
 
         attr_dict = {'scope': clique_scope,
+                     'msg_scope': msg_scope,
+                     'nodes_used': nodes_used,
+                     'msg_used': False,
                      'factor': factor,
                      'msg_upward': [],
                      'msg_downward': [],
@@ -197,20 +270,36 @@ def get_clique_graph(elim_order,
         clique_graph.add_node(n=clique_name,
                               attr_dict=attr_dict)
 
-    # Connect cliques that have any variables
-    # in common
-    for cn1, dict1 in clique_graph.nodes_iter(data=True):
-        for cn2, dict2 in clique_graph.nodes_iter(data=True):
-            if cn1 == cn2:
-                continue
-            sepset = dict1['scope'].intersection(dict2['scope'])
-            n = len(sepset)
-            if n > 0:
-                clique_graph.add_edge(u=cn1,
-                                      v=cn2,
-                                      attr_dict={'sepset': sepset, 'weight': -n})
+        for e in edges:
+            sepset = clique_graph.node[e]['scope'].intersection(clique_scope)
+            d = {'sepset': sepset}
+            clique_graph.add_edge(e, clique_name, d)
 
-    clique_graph = nx.minimum_spanning_tree(clique_graph)
+    # See if any cliques are isolated
+    # if so, they had non-overlapping scopes
+    # So we can place them into any clique
+    isolated = []
+    C = None
+    for name, dict_ in clique_graph.nodes_iter(data=True):
+        if len(clique_graph.neighbors(name)) == 0:
+            isolated.append(name)
+        elif C is None:
+            C = name
+
+    for name in isolated:
+        factor = clique_graph.node[name]['factor']
+        f = clique_graph.node[C]['factor']
+        s = clique_graph.node[C]['scope']
+        f = get_product(f, factor, use_log_space=True)
+
+        clique_scope = set([to_name[i] for i in f.scope])
+        scope = clique_scope.update(s)
+        clique_graph.node[C]['factor'] = f
+        clique_graph.node[C]['scope'] = scope
+        clique_graph.remove_node(name)
+
+    # print("IS_CONNECTED: {0}".format(nx.is_connected(clique_graph)))
+
     return clique_graph
 
 
@@ -325,6 +414,7 @@ class BayesianNetwork(object):
             f = Factor(scope=scope,
                        card=card,
                        val=val)
+            f = log(f)
 
             var_scope = set([node_name] + value['parents'])
             self.add_node(node_name=node_name,
@@ -358,6 +448,8 @@ class BayesianNetwork(object):
             message_pass(cg, self._to_name)
         compute_beliefs(cg)
 
+        # check_rip(cg)
+        # write_graph(cg, self._to_name)
         check_calibration(cg, self._to_index, self._to_name)
 
         # Update random variables for all nodes in network
@@ -367,11 +459,11 @@ class BayesianNetwork(object):
             node_names = [self._to_name[i] for i in indices]
 
             for i in xrange(len(node_names)):
-                factor = data['belief']
+                factor = exp(data['belief'])
                 for j in xrange(len(node_names)):
                     if i == j:
                         continue
-                    factor = get_marg(factor, self._to_index[node_names[j]])
+                    factor = get_marg(factor, self._to_index[node_names[j]], use_log_space=False)
 
                 factor = renormalize(factor)
                 self.set_value(node_names[i], 'rv', factor)

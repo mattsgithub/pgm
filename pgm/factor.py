@@ -3,6 +3,7 @@ import numpy as np
 
 
 Factor = namedtuple('Factor', 'scope card val')
+Scalar = namedtuple('Scalar', 'val')
 
 
 def renormalize(f):
@@ -14,11 +15,17 @@ def renormalize(f):
 
 
 def log(f):
-    val = np.log(f.val)
-    factor = Factor(scope=f.scope,
-                    card=f.card,
-                    val=val)
-    return factor
+    return Factor(scope=f.scope,
+                  card=f.card,
+                  val=np.log(f.val))
+
+
+def exp(f):
+    # Normalize
+    val = np.exp(f.val)
+    return Factor(scope=f.scope,
+                  card=f.card,
+                  val=val)
 
 
 def get_matching_indices(f1,
@@ -130,7 +137,14 @@ def indx_to_assign(i, c):
     return np.mod(I / s, c)
 
 
-def get_marg(A, v):
+def get_marg(A, v, use_log_space=False):
+    if len(A.scope) == 1 and A.scope[0] == v:
+        return Scalar(val=1.)
+
+    # Convert out of log space
+    if use_log_space:
+        A = exp(A)
+
     # Get indices for every variable
     # except one being summed out
     map_ = np.where(A.scope != v)
@@ -161,17 +175,34 @@ def get_marg(A, v):
         v = A.val[i]
         val[j] += v
 
-    return Factor(scope,
-                  card,
-                  val)
+    f = Factor(scope,
+               card,
+               val)
+    
+    # Convert back to log space
+    if use_log_space:
+        f = log(f)
+
+    return f
 
 
-def get_product_from_list(f, logspace=False):
-    fu = lambda x, y, logspace=logspace: get_product(x, y, logspace=logspace)
-    return reduce(fu, f)
+def get_product_from_list(f, use_log_space=False):
+    if len(f) == 0:
+        return Scalar(val=1.)
+
+    func = lambda x, y: get_product(x, y, use_log_space=use_log_space)
+    return reduce(func, f)
 
 
-def get_product(A, B, logspace=False):
+def get_product(A, B, use_log_space=False):
+    if isinstance(A, Scalar):
+        return B
+    if isinstance(B, Scalar):
+        return A
+    if A is None:
+        return B
+    elif B is None:
+        return A
     scope = np.union1d(A.scope, B.scope)
 
     mapA, mapB = get_mappings(A.scope,
@@ -189,11 +220,9 @@ def get_product(A, B, logspace=False):
     indx_A = assign_to_indx(assign[:, mapA], A.card)
     indx_B = assign_to_indx(assign[:, mapB], B.card)
 
-    if logspace:
-        A = log(A)
-        B = log(B)
+    if use_log_space:
+        #val = np.logaddexp(A.val[indx_A], B.val[indx_B])
         val = A.val[indx_A] + B.val[indx_B]
-        val = np.exp(val)
     else:
         val = A.val[indx_A] * B.val[indx_B]
 
